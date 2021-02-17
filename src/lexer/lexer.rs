@@ -175,8 +175,8 @@ impl<'a> Iterator for Lexer<'a> {
                 while let Some(ch) = self.get_current_char() {
                     match (ch) {
                         '"' => {
-                            self.consume_char();
                             end = self.position.char;
+                            self.consume_char();
                             break;
                         }
                         '\n' => {
@@ -194,7 +194,7 @@ impl<'a> Iterator for Lexer<'a> {
             }
             'a'..='z' | 'A'..='Z' | '_' => {
                 let position = self.position;
-                let end: usize = 0;
+                let mut end: usize = 0;
                 while let Some(ch) = self.get_current_char() {
                     match ch {
                         'A'..='Z' | 'a'..='z' | '_' => {
@@ -203,6 +203,7 @@ impl<'a> Iterator for Lexer<'a> {
                         _ => break,
                     }
                 }
+                end = self.position.char;
 
                 let slice = &self.input[position.char..end];
                 let kind = TokenType::match_keyword(slice);
@@ -230,7 +231,9 @@ mod tests {
     use crate::lexer::lexer::{Lexer, Token};
     #[test]
     fn it_works() {
-        let test_str = "1 + 2.3555";
+        let test_str = r#"1 + 2.3555
+        "hi there!" awefawe
+        "#;
         let l = Lexer::new(test_str);
         let z = l.collect::<Vec<_>>();
         println!("{:#?}", z);
