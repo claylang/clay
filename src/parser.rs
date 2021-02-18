@@ -103,14 +103,18 @@ impl<'a, 'b> Parser<'a> {
         return Precedence::from_tok(peek_token.kind);
     }
 
-    pub fn parse_program(&mut self) -> Program {
+    pub fn parse_program(&mut self) -> Program<'a> {
         let mut statements: Vec<Statement> = Vec::new();
+        let current_pos = self.current_position;
+        let length = self.tokens.len();
 
-        while self.current_position != self.tokens.len() {
-            statements.push(self.parse_statement());
+        while current_pos != length {
+            let parsed_statement = self.parse_statement();
+            statements.push(parsed_statement);
 
             self.consume_token();
         }
+
         return Program { statements };
     }
 }
@@ -130,7 +134,7 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn parse_statement(&mut self) -> Statement {
+    pub fn parse_statement(&mut self) -> Statement<'a> {
         match self.get_current_token().unwrap().kind {
             TokenType::Import => self.parse_import_statement(),
             // TokenType::Ident(_) => self.parse_assignment_statement(),
@@ -138,7 +142,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_import_statement(&mut self) -> Statement {
+    pub fn parse_import_statement(&mut self) -> Statement<'a> {
         let token = self.get_current_token().unwrap();
 
         let z = self.consume_token();
@@ -146,7 +150,7 @@ impl<'a> Parser<'a> {
         Statement::ImportStatement { token, value }
     }
 
-    pub fn parse_expression_statement(&mut self) -> Statement {
+    pub fn parse_expression_statement(&mut self) -> Statement<'a> {
         let token = self.get_current_token().unwrap();
         let expression = self.parse_expression(Precedence::LOWEST);
         Statement::ExpressionStatement { token, expression }
@@ -154,7 +158,7 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn parse_expression(&mut self, precedence: Precedence) -> Box<Expression> {
+    pub fn parse_expression(&mut self, precedence: Precedence) -> Box<Expression<'a>> {
         let prefix_tok = self.get_current_token().unwrap().kind;
         let prefix = self.find_prefix_fn(prefix_tok);
         // .unwrap_or_else(|| panic!("could not find prefix parser."));
@@ -165,14 +169,20 @@ impl<'a> Parser<'a> {
 
         let mut prefixExp = self.call_prefix_fn(prefix_tok);
 
+        if (self.get_current_precedence() == None) {
+            return prefixExp;
+        }
+
         while precedence < self.get_current_precedence().unwrap() {
-            let infix = self.find_infix_fn(self.get_peek_token().unwrap().kind);
+            let z = self.get_peek_token().unwrap().kind;
+            let infix = self.find_infix_fn(z);
             if (!infix) {
-                return prefixExp;
+                return prefixExp.clone();
             }
             self.consume_token();
-            prefixExp = self.call_infix_fn(self.tokens[self.current_position + 1].kind, prefixExp);
+            return self.call_infix_fn(self.tokens[self.current_position + 1].kind, prefixExp);
         }
+
         return prefixExp;
     }
 
@@ -183,7 +193,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn call_prefix_fn(&mut self, kind: TokenType<'a>) -> Box<Expression> {
+    pub fn call_prefix_fn(&mut self, kind: TokenType<'a>) -> Box<Expression<'a>> {
         match kind {
             TokenType::Integer(_) => Box::new(self.parse_integer_literal()),
             _ => panic!("No prefix parse fucntion found."),
@@ -201,10 +211,25 @@ impl<'a> Parser<'a> {
         &mut self,
         kind: TokenType<'a>,
         expression: Box<Expression>,
-    ) -> Box<Expression> {
+    ) -> Box<Expression<'a>> {
         match kind {
             // TokenType::Integer(_) => Box::new(self.parse_integer_literal()),
             _ => panic!("No infix parse fucntion found."),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::lexer::lexer::Lexer;
+    use crate::parser::Parser;
+    #[test]
+    fn it_works() {
+        let test_str = r#"3"#;
+        let l = Lexer::new(test_str);
+        let z = l.collect::<Vec<_>>();
+        println!("{:#?}", z);
+        let mut p = Parser::new(z);
+        println!("{:#?}", p.parse_statement());
     }
 }
