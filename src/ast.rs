@@ -8,8 +8,11 @@ pub struct Program<'a> {
 }
 #[derive(Debug, Clone)]
 pub enum Expression<'a> {
-    IdentifierLiteral {
-        token: Token<'a>,
+    DefinitionIdentifier {
+        idents: Vec<Token<'a>>,
+    },
+    NormalIdentifier {
+        idents: Vec<Token<'a>>,
     },
     StringLiteral {
         token: Token<'a>,
@@ -70,15 +73,16 @@ pub enum Statement<'a> {
         token: Token<'a>,
         expression: Box<Expression<'a>>,
     },
-    ValueStatement {
+    AssignStatement {
         token: Token<'a>,
-        name: Token<'a>,
-        value: Box<Expression<'a>>,
+        expression: Box<Expression<'a>>,
+        defined: Box<Expression<'a>>,
     },
+
     UpdateStatement {
         token: Token<'a>,
-        name: Token<'a>,
-        value: Box<Expression<'a>>,
+        ident: Box<Expression<'a>>,
+        expression: Box<Expression<'a>>,
     },
     ReturnStatement {
         token: Token<'a>,
