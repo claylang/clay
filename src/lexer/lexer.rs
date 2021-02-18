@@ -64,6 +64,8 @@ impl<'a> Iterator for Lexer<'a> {
             ']' => self.lex_single_char(TokenType::RBracket),
             '{' => self.lex_single_char(TokenType::LBrace),
             '}' => self.lex_single_char(TokenType::RBrace),
+            ',' => self.lex_single_char(TokenType::Comma),
+            '.' => self.lex_single_char(TokenType::Period),
             '!' => match peek_char {
                 Some('=') => self.lex_double_char(TokenType::BangEqual),
                 None | Some(' ') | Some('\t') | Some('\r') => self.lex_single_char(TokenType::Bang),
@@ -146,6 +148,7 @@ impl<'a> Iterator for Lexer<'a> {
                 }
                 _ => panic!("Undefined token."),
             },
+
             '0'..='9' => {
                 enum NumberTypes {
                     Int,
