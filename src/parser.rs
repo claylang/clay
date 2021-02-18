@@ -34,7 +34,7 @@ impl Precedence {
             TokenType::Slash => Some(Precedence::PRODUCT),
             TokenType::LParen => Some(Precedence::CALL),
             TokenType::LBracket => Some(Precedence::INDEX),
-            _ => None,
+            _ => Some(Precedence::LOWEST),
         }
     }
 }
@@ -56,7 +56,7 @@ impl<'a, 'b> Parser<'a> {
         self.current_position += 1;
     }
 
-    pub fn get_current_token(&mut self) -> Option<Token<'a>> {
+    pub fn get_current_token(&self) -> Option<Token<'a>> {
         match self.tokens.get(self.current_position) {
             Some(z) => Some(*z),
             _ => None,
@@ -98,9 +98,13 @@ impl<'a, 'b> Parser<'a> {
     }
 
     pub fn get_peek_precedence(&mut self) -> Option<Precedence> {
-        let peek_token = self.get_peek_token().unwrap();
+        let peek_token = self.get_peek_token();
 
-        return Precedence::from_tok(peek_token.kind);
+        if let Some(tok) = peek_token {
+            return Precedence::from_tok(tok.kind);
+        }
+
+        return None;
     }
 
     pub fn parse_program(&mut self) -> Program<'a> {
@@ -110,9 +114,13 @@ impl<'a, 'b> Parser<'a> {
 
         while current_pos != length {
             let parsed_statement = self.parse_statement();
-            statements.push(parsed_statement);
 
-            self.consume_token();
+            if let Some(stmt) = parsed_statement {
+                statements.push(stmt);
+                self.consume_token();
+            } else {
+                break;
+            }
         }
 
         return Program { statements };
@@ -120,102 +128,182 @@ impl<'a, 'b> Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn parse_integer_literal(&mut self) -> Expression<'a> {
-        Expression::IntegerLiteral {
+    pub fn parse_integer_literal(&self) -> Box<Expression<'a>> {
+        Box::new(Expression::IntegerLiteral {
             token: self.get_current_token().unwrap(),
-        }
+        })
     }
 
-    // pub fn parse_string_literal(&self) -> &Expression {
-    //     &Expression::StringLiteral {
-    //         token: self.get_current_token().unwrap(),
-    //     }
-    // }
+    pub fn parse_float_literal(&self) -> Box<Expression<'a>> {
+        Box::new(Expression::FloatLiteral {
+            token: self.get_current_token().unwrap(),
+        })
+    }
+
+    pub fn parse_string_literal(&self) -> Box<Expression<'a>> {
+        Box::new(Expression::StringLiteral {
+            token: self.get_current_token().unwrap(),
+        })
+    }
 }
 
 impl<'a> Parser<'a> {
-    pub fn parse_statement(&mut self) -> Statement<'a> {
-        match self.get_current_token().unwrap().kind {
-            TokenType::Import => self.parse_import_statement(),
-            // TokenType::Ident(_) => self.parse_assignment_statement(),
-            _ => self.parse_expression_statement(),
+    pub fn parse_statement(&mut self) -> Option<Statement<'a>> {
+        let token = self.get_current_token();
+        if let Some(to) = token {
+            return match to.kind {
+                TokenType::Import => self.parse_import_statement(),
+                // TokenType::Ident(_) => self.parse_assignment_statement(),
+                _ => self.parse_expression_statement(),
+            };
+        } else {
+            return None;
         }
     }
 
-    pub fn parse_import_statement(&mut self) -> Statement<'a> {
+    pub fn parse_import_statement(&mut self) -> Option<Statement<'a>> {
         let token = self.get_current_token().unwrap();
 
         let z = self.consume_token();
         let value = self.get_current_token().unwrap();
-        Statement::ImportStatement { token, value }
+        Some(Statement::ImportStatement { token, value })
     }
 
-    pub fn parse_expression_statement(&mut self) -> Statement<'a> {
+    pub fn parse_expression_statement(&mut self) -> Option<Statement<'a>> {
         let token = self.get_current_token().unwrap();
         let expression = self.parse_expression(Precedence::LOWEST);
-        Statement::ExpressionStatement { token, expression }
+        if let Some(exp) = expression {
+            return Some(Statement::ExpressionStatement {
+                token,
+                expression: exp,
+            });
+        }
+
+        return None;
     }
 }
 
 impl<'a> Parser<'a> {
-    pub fn parse_expression(&mut self, precedence: Precedence) -> Box<Expression<'a>> {
+    pub fn parse_expression(&mut self, precedence: Precedence) -> Option<Box<Expression<'a>>> {
         let prefix_tok = self.get_current_token().unwrap().kind;
-        let prefix = self.find_prefix_fn(prefix_tok);
+        println!("{:?}", prefix_tok);
+        let prefix = self.prefix_fn(prefix_tok, false);
         // .unwrap_or_else(|| panic!("could not find prefix parser."));
 
-        if (!prefix) {
-            panic!("no prefix parse function found.");
+        if (!prefix.0) {
+            return None;
         }
 
-        let mut prefixExp = self.call_prefix_fn(prefix_tok);
+        let mut prefixExp = self.prefix_fn(prefix_tok, true).1.unwrap();
 
-        if (self.get_current_precedence() == None) {
-            return prefixExp;
-        }
-
-        while precedence < self.get_current_precedence().unwrap() {
+        while precedence
+            < self
+                .get_peek_precedence()
+                .unwrap_or_else(|| Precedence::LOWEST)
+        {
+            println!("peek token: {:?}", self.tokens[self.current_position + 1]);
             let z = self.get_peek_token().unwrap().kind;
-            let infix = self.find_infix_fn(z);
+            println!("peek token kind: {:?}", z);
+            let (infix, z) = self.infix_fn(z, false, None);
             if (!infix) {
-                return prefixExp.clone();
+                return Some(prefixExp);
             }
             self.consume_token();
-            return self.call_infix_fn(self.tokens[self.current_position + 1].kind, prefixExp);
+            prefixExp = self
+                .infix_fn(
+                    self.get_current_token().unwrap().kind,
+                    true,
+                    Some(prefixExp),
+                )
+                .1
+                .unwrap();
         }
+        // self.consume_token();
 
-        return prefixExp;
+        return Some(prefixExp);
     }
 
-    pub fn find_prefix_fn(&mut self, kind: TokenType<'a>) -> bool {
-        match kind {
-            TokenType::Integer(_) => true,
-            _ => panic!("No prefix parse function found."),
-        }
-    }
-
-    pub fn call_prefix_fn(&mut self, kind: TokenType<'a>) -> Box<Expression<'a>> {
-        match kind {
-            TokenType::Integer(_) => Box::new(self.parse_integer_literal()),
-            _ => panic!("No prefix parse fucntion found."),
-        }
-    }
-
-    pub fn find_infix_fn(&mut self, kind: TokenType) -> bool {
-        match kind {
-            // TokenType::Integer(_) => Some(Box::new(|| Box::new(self.parse_integer_literal()))),
-            _ => panic!("No infix parse function found."),
-        }
-    }
-
-    pub fn call_infix_fn(
+    pub fn prefix_fn(
         &mut self,
         kind: TokenType<'a>,
-        expression: Box<Expression>,
-    ) -> Box<Expression<'a>> {
-        match kind {
-            // TokenType::Integer(_) => Box::new(self.parse_integer_literal()),
-            _ => panic!("No infix parse fucntion found."),
+        execute: bool,
+    ) -> (bool, Option<Box<Expression<'a>>>) {
+        match (kind, execute) {
+            (TokenType::Integer(_), false) => (true, None),
+            (TokenType::Integer(_), true) => (true, Some(self.parse_integer_literal())),
+            (TokenType::Float(_), false) => (true, None),
+            (TokenType::Float(_), true) => (true, Some(self.parse_float_literal())),
+            (TokenType::String(_), false) => (true, None),
+            (TokenType::String(_), true) => (true, Some(self.parse_string_literal())),
+            _ => (false, None),
         }
+    }
+
+    pub fn infix_fn(
+        &mut self,
+        kind: TokenType,
+        execute: bool,
+        left: Option<Box<Expression<'a>>>,
+    ) -> (bool, Option<Box<Expression<'a>>>) {
+        match (kind, execute) {
+            (TokenType::Plus, false) => (true, None),
+            (TokenType::Plus, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+            (TokenType::Minus, false) => (true, None),
+            (TokenType::Minus, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+            (TokenType::Slash, false) => (true, None),
+            (TokenType::Slash, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+            (TokenType::Asterisk, false) => (true, None),
+            (TokenType::Asterisk, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+            (TokenType::Minus, false) => (true, None),
+            (TokenType::Minus, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+            (TokenType::PlusEqual, false) => (true, None),
+            (TokenType::PlusEqual, true) => {
+                (true, Some(self.parse_infix_expression(left.unwrap())))
+            }
+            (TokenType::AsteriskEqual, false) => (true, None),
+            (TokenType::AsteriskEqual, true) => {
+                (true, Some(self.parse_infix_expression(left.unwrap())))
+            }
+            (TokenType::SlashEqual, false) => (true, None),
+            (TokenType::SlashEqual, true) => {
+                (true, Some(self.parse_infix_expression(left.unwrap())))
+            }
+            (TokenType::DoubleEqual, false) => (true, None),
+            (TokenType::DoubleEqual, true) => {
+                (true, Some(self.parse_infix_expression(left.unwrap())))
+            }
+            (TokenType::BangEqual, false) => (true, None),
+            (TokenType::BangEqual, true) => {
+                (true, Some(self.parse_infix_expression(left.unwrap())))
+            }
+            (TokenType::LT, false) => (true, None),
+            (TokenType::LT, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+            (TokenType::GT, false) => (true, None),
+            (TokenType::GT, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+            (TokenType::Or, false) => (true, None),
+            (TokenType::Or, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+            (TokenType::And, false) => (true, None),
+            (TokenType::And, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+            (TokenType::LTEq, false) => (true, None),
+            (TokenType::LTEq, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+            (TokenType::GTEq, false) => (true, None),
+            (TokenType::GTEq, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+            _ => (false, None),
+        }
+    }
+}
+
+impl<'a> Parser<'a> {
+    pub fn parse_infix_expression(&mut self, left: Box<Expression<'a>>) -> Box<Expression<'a>> {
+        let current = self.get_current_token().unwrap();
+        let precedence = self.get_current_precedence().unwrap();
+        self.consume_token();
+        let right = self.parse_expression(precedence).unwrap();
+        return Box::new(Expression::InfixExpression {
+            token: current,
+            right,
+            left,
+        });
     }
 }
 
@@ -225,11 +313,11 @@ mod tests {
     use crate::parser::Parser;
     #[test]
     fn it_works() {
-        let test_str = r#"3"#;
+        let test_str = r#"2 / 5.5"#;
         let l = Lexer::new(test_str);
         let z = l.collect::<Vec<_>>();
         println!("{:#?}", z);
         let mut p = Parser::new(z);
-        println!("{:#?}", p.parse_statement());
+        println!("{:#?}", p.parse_program());
     }
 }
