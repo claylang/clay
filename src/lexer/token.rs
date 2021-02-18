@@ -31,6 +31,7 @@ pub enum TokenType<'a> {
     MinusEqual,
     SlashEqual,
     AsteriskEqual,
+    Comma,
     Colon,
     ColonEqual,
 
