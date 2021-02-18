@@ -1,3 +1,5 @@
+#![allow(dead_code, unreachable_patterns)]
+
 mod ast;
 mod lexer;
 mod parser;
