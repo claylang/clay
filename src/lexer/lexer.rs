@@ -1,4 +1,3 @@
-use core::num;
 use std::usize;
 
 use crate::lexer::token::{Position, Token, TokenType};
@@ -194,7 +193,7 @@ impl<'a> Iterator for Lexer<'a> {
                 let position = self.position;
                 let mut end: usize = 0;
                 while let Some(ch) = self.get_current_char() {
-                    match (ch) {
+                    match ch {
                         '"' => {
                             end = self.position.char;
                             self.consume_char();
@@ -215,7 +214,7 @@ impl<'a> Iterator for Lexer<'a> {
             }
             'a'..='z' | 'A'..='Z' | '_' => {
                 let position = self.position;
-                let mut end: usize = 0;
+
                 while let Some(ch) = self.get_current_char() {
                     match ch {
                         'A'..='Z' | 'a'..='z' | '_' => {
@@ -224,7 +223,7 @@ impl<'a> Iterator for Lexer<'a> {
                         _ => break,
                     }
                 }
-                end = self.position.char;
+                let end = self.position.char;
 
                 let slice = &self.input[position.char..end];
                 let kind = TokenType::match_keyword(slice);
@@ -249,7 +248,7 @@ impl<'a> Iterator for Lexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::lexer::{Lexer, Token};
+    use crate::lexer::lexer::Lexer;
     #[test]
     fn it_works() {
         let test_str = r#"1 + 2.3555
