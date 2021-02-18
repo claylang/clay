@@ -140,6 +140,13 @@ impl<'a> Iterator for Lexer<'a> {
                 }
                 _ => panic!("Undefined token."),
             },
+            ':' => match peek_char {
+                Some('=') => self.lex_double_char(TokenType::ColonEqual),
+                None | Some(' ') | Some('\t') | Some('\r') => {
+                    self.lex_single_char(TokenType::Colon)
+                }
+                _ => panic!("Undefined token."),
+            },
             '0'..='9' => {
                 enum NumberTypes {
                     Int,

@@ -31,6 +31,8 @@ pub enum TokenType<'a> {
     MinusEqual,
     SlashEqual,
     AsteriskEqual,
+    Colon,
+    ColonEqual,
 
     Integer(usize),
     Float(f32),
