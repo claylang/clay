@@ -1,6 +1,6 @@
 use crate::{
     ast::{Expression, Program, Statement},
-    lexer::token::{self, Token, TokenType},
+    lexer::token::{Token, TokenType},
 };
 
 #[derive(Debug, PartialOrd, PartialEq)]
@@ -164,7 +164,7 @@ impl<'a> Parser<'a> {
     pub fn parse_import_statement(&mut self) -> Option<Statement<'a>> {
         let token = self.get_current_token().unwrap();
 
-        let z = self.consume_token();
+        self.consume_token();
         let value = self.get_current_token().unwrap();
         Some(Statement::ImportStatement { token, value })
     }
@@ -190,37 +190,37 @@ impl<'a> Parser<'a> {
         let prefix = self.prefix_fn(prefix_tok, false);
         // .unwrap_or_else(|| panic!("could not find prefix parser."));
 
-        if (!prefix.0) {
+        if !prefix.0 {
             return None;
         }
 
-        let mut prefixExp = self.prefix_fn(prefix_tok, true).1.unwrap();
+        let mut prefix_exp = self.prefix_fn(prefix_tok, true).1.unwrap();
 
         while precedence
             < self
                 .get_peek_precedence()
                 .unwrap_or_else(|| Precedence::LOWEST)
         {
-            println!("peek token: {:?}", self.tokens[self.current_position + 1]);
             let z = self.get_peek_token().unwrap().kind;
-            println!("peek token kind: {:?}", z);
-            let (infix, z) = self.infix_fn(z, false, None);
-            if (!infix) {
-                return Some(prefixExp);
+
+            let (infix_exists, _) = self.infix_fn(z, false, None);
+
+            if !infix_exists {
+                return Some(prefix_exp);
             }
+
             self.consume_token();
-            prefixExp = self
+            prefix_exp = self
                 .infix_fn(
                     self.get_current_token().unwrap().kind,
                     true,
-                    Some(prefixExp),
+                    Some(prefix_exp),
                 )
                 .1
                 .unwrap();
         }
-        // self.consume_token();
 
-        return Some(prefixExp);
+        return Some(prefix_exp);
     }
 
     pub fn prefix_fn(
@@ -313,7 +313,8 @@ mod tests {
     use crate::parser::Parser;
     #[test]
     fn it_works() {
-        let test_str = r#"2 / 5.5"#;
+        let test_str = r#"import z
+        2 + 2"#;
         let l = Lexer::new(test_str);
         let z = l.collect::<Vec<_>>();
         println!("{:#?}", z);
