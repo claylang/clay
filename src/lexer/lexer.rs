@@ -126,6 +126,20 @@ impl<'a> Iterator for Lexer<'a> {
                 }
                 _ => panic!("Undefined token."),
             },
+            '<' => match peek_char {
+                Some('=') => self.lex_double_char(TokenType::LTEq),
+                None | Some(' ') | Some('\t') | Some('\r') => {
+                    self.lex_single_char(TokenType::Asterisk)
+                }
+                _ => panic!("Undefined token."),
+            },
+            '>' => match peek_char {
+                Some('=') => self.lex_double_char(TokenType::GTEq),
+                None | Some(' ') | Some('\t') | Some('\r') => {
+                    self.lex_single_char(TokenType::Asterisk)
+                }
+                _ => panic!("Undefined token."),
+            },
             '0'..='9' => {
                 enum NumberTypes {
                     Int,

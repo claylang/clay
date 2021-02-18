@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenType<'a> {
     RParen,   // )
     LParen,   // (
@@ -16,6 +16,11 @@ pub enum TokenType<'a> {
     DoubleEqual,
     Bang,
     BangEqual,
+    LT,
+    LTEq,
+    GT,
+    GTEq,
+
     Period,
     Semicolon,
     Ampersand,
