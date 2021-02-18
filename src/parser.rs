@@ -17,6 +17,11 @@ enum Precedence {
     INDEX = 9,
 }
 
+enum IdentTypes {
+    Destructuring,
+    Normal,
+}
+
 impl Precedence {
     fn from_tok(token: TokenType) -> Option<Precedence> {
         match token {
@@ -76,6 +81,7 @@ impl<'a, 'b> Parser<'a> {
                 self.consume_token();
                 return true;
             } else {
+                panic!("Expected token");
                 return false;
             }
         } else {
@@ -145,6 +151,57 @@ impl<'a> Parser<'a> {
             token: self.get_current_token().unwrap(),
         })
     }
+
+    pub fn parse_ident_literals(&mut self) -> (Vec<Token<'a>>, IdentTypes) {
+        let mut kind = IdentTypes::Destructuring;
+
+        let mut idents: Vec<Token<'a>> = Vec::new();
+
+        while let Some(peek) = self.get_peek_token() {
+            match peek.kind {
+                TokenType::Period => {
+                    idents.push(self.get_current_token().unwrap());
+                    kind = IdentTypes::Normal;
+                    self.consume_token();
+                    if let Some(peek) = self.get_peek_token() {
+                        match peek.kind {
+                            TokenType::Ident(_) => {
+                                self.consume_token();
+                                idents.push(self.get_current_token().unwrap());
+                            }
+                            _ => panic!("Expected IDEnt after period."),
+                        }
+                    } else {
+                        panic!("Expected IDEnt after period.");
+                    }
+                }
+                TokenType::Comma => {
+                    idents.push(self.get_current_token().unwrap());
+                    kind = IdentTypes::Destructuring;
+                    self.consume_token();
+                    if let Some(peek) = self.get_peek_token() {
+                        match peek.kind {
+                            TokenType::Ident(_) => {
+                                self.consume_token();
+                                idents.push(self.get_current_token().unwrap());
+                            }
+                            _ => panic!("Expected IDEnt after comma."),
+                        }
+                    } else {
+                        panic!("Expected IDEnt after comma.");
+                    }
+                }
+                _ => {
+                    // idents.push(self.get_current_token().unwrap());
+                    self.consume_token();
+
+                    return (idents, kind);
+                }
+            }
+        }
+
+        (idents, kind)
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -153,6 +210,7 @@ impl<'a> Parser<'a> {
         if let Some(to) = token {
             return match to.kind {
                 TokenType::Import => self.parse_import_statement(),
+                TokenType::Ident(_) => self.parse_identifier_statement(),
                 // TokenType::Ident(_) => self.parse_assignment_statement(),
                 _ => self.parse_expression_statement(),
             };
@@ -165,8 +223,11 @@ impl<'a> Parser<'a> {
         let token = self.get_current_token().unwrap();
 
         self.consume_token();
-        let value = self.get_current_token().unwrap();
-        Some(Statement::ImportStatement { token, value })
+        let ident = self.get_current_token().unwrap();
+        Some(Statement::ImportStatement {
+            token,
+            value: ident,
+        })
     }
 
     pub fn parse_expression_statement(&mut self) -> Option<Statement<'a>> {
@@ -181,6 +242,49 @@ impl<'a> Parser<'a> {
 
         return None;
     }
+
+    pub fn parse_identifier_statement(&mut self) -> Option<Statement<'a>> {
+        let mut kind = IdentTypes::Destructuring;
+        let (idents, _) = self.parse_ident_literals();
+
+        match self.get_current_token().unwrap().kind {
+            TokenType::ColonEqual => {
+                kind = IdentTypes::Destructuring;
+            }
+            TokenType::Equal => {
+                kind = IdentTypes::Normal;
+            }
+            _ => {
+                panic!("Expected token of kind ':=' or '=' in assignment statement.");
+            }
+        }
+
+        let token = self.get_current_token().unwrap();
+
+        self.consume_token();
+        let expr = self.parse_expression(Precedence::LOWEST);
+
+        if let Some(expression) = expr {
+            match kind {
+                IdentTypes::Destructuring => {
+                    return Some(Statement::AssignStatement {
+                        token,
+                        expression,
+                        defined: Box::new(Expression::DefinitionIdentifier { idents }),
+                    })
+                }
+                IdentTypes::Normal => {
+                    return Some(Statement::UpdateStatement {
+                        token,
+                        expression,
+                        ident: Box::new(Expression::NormalIdentifier { idents }),
+                    })
+                }
+            }
+        } else {
+            panic!("Expected expression after assignment operator.")
+        }
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -188,7 +292,6 @@ impl<'a> Parser<'a> {
         let prefix_tok = self.get_current_token().unwrap().kind;
         println!("{:?}", prefix_tok);
         let prefix = self.prefix_fn(prefix_tok, false);
-        // .unwrap_or_else(|| panic!("could not find prefix parser."));
 
         if !prefix.0 {
             return None;
@@ -223,6 +326,8 @@ impl<'a> Parser<'a> {
         return Some(prefix_exp);
     }
 
+    // pub fn
+
     pub fn prefix_fn(
         &mut self,
         kind: TokenType<'a>,
@@ -235,6 +340,8 @@ impl<'a> Parser<'a> {
             (TokenType::Float(_), true) => (true, Some(self.parse_float_literal())),
             (TokenType::String(_), false) => (true, None),
             (TokenType::String(_), true) => (true, Some(self.parse_string_literal())),
+            (TokenType::LParen, false) => (true, None),
+            (TokenType::LParen, true) => (true, Some(self.parse_grouped_expression())),
             _ => (false, None),
         }
     }
@@ -305,6 +412,19 @@ impl<'a> Parser<'a> {
             left,
         });
     }
+
+    pub fn parse_grouped_expression(&mut self) -> Box<Expression<'a>> {
+        self.consume_token();
+
+        let expr = self.parse_expression(Precedence::LOWEST);
+
+        if let Some(expr) = expr {
+            self.expect_peek(TokenType::RParen);
+            return expr;
+        } else {
+            panic!("Expected some expression after opening bracket.");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -312,13 +432,28 @@ mod tests {
     use crate::lexer::lexer::Lexer;
     use crate::parser::Parser;
     #[test]
-    fn it_works() {
-        let test_str = r#"import z
-        2 + 2"#;
+    fn full_test() {
+        let test_str = r#"
+        import z
+        2 + 2 * 3
+        "#;
         let l = Lexer::new(test_str);
         let z = l.collect::<Vec<_>>();
         println!("{:#?}", z);
         let mut p = Parser::new(z);
         println!("{:#?}", p.parse_program());
+    }
+
+    #[test]
+    fn ident_assign() {
+        let test_str = r#"
+        x, z := 3 + 2
+        m.e = "3"
+        "#;
+
+        println!(
+            "{:#?}",
+            Parser::new(Lexer::new(test_str).collect::<Vec<_>>()).parse_program()
+        );
     }
 }
