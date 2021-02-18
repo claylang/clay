@@ -84,4 +84,8 @@ pub enum Statement<'a> {
         token: Token<'a>,
         value: Box<Expression<'a>>,
     },
+    ImportStatement {
+        token: Token<'a>,
+        value: Token<'a>,
+    },
 }
