@@ -68,24 +68,25 @@ impl<'a, 'b> Parser<'a> {
         }
     }
 
-    pub fn get_peek_token(&mut self) -> Option<Token<'a>> {
+    pub fn get_peek_token(&self) -> Option<Token<'a>> {
         match self.tokens.get(self.current_position + 1) {
             Some(z) => Some(*z),
             _ => None,
         }
     }
 
-    pub fn expect_peek(&mut self, kind: TokenType) -> bool {
+    pub fn expect_peek(&mut self, kind: TokenType, reason: &str) -> bool {
+        let current_tok = self.get_current_token().unwrap();
         if let Some(peek) = self.get_peek_token() {
             if peek.kind == kind {
                 self.consume_token();
                 return true;
             } else {
-                panic!("Expected token");
+                panic!("{} Expected token of type '{:?}' to be after token of type '{:?}' when {}, received '{:?}' instead.", peek.position, kind, current_tok.kind, reason, peek.kind);
                 return false;
             }
         } else {
-            panic!("Out of index for peek token.")
+            panic!("{} Out of index for peek token.", current_tok.position);
         }
     }
 
@@ -152,15 +153,45 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub fn parse_ident_literals(&mut self) -> (Vec<Token<'a>>, IdentTypes) {
-        let mut kind = IdentTypes::Destructuring;
-
+    pub fn parse_ident_literal(&mut self) -> Box<Expression<'a>> {
         let mut idents: Vec<Token<'a>> = Vec::new();
+        idents.push(self.get_current_token().unwrap());
 
         while let Some(peek) = self.get_peek_token() {
             match peek.kind {
                 TokenType::Period => {
-                    idents.push(self.get_current_token().unwrap());
+                    self.consume_token();
+                    if let Some(peek) = self.get_peek_token() {
+                        match peek.kind {
+                            TokenType::Ident(_) => {
+                                self.consume_token();
+                                idents.push(self.get_current_token().unwrap());
+                            }
+                            _ => panic!("Expected Ident after period."),
+                        }
+                    } else {
+                        panic!("Expected Ident after period.");
+                    }
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+
+        return Box::new(Expression::NormalIdentifier { idents });
+    }
+
+    pub fn parse_ident_literals(&mut self) -> (Vec<Token<'a>>, IdentTypes) {
+        let mut kind = IdentTypes::Destructuring;
+
+        let mut idents: Vec<Token<'a>> = Vec::new();
+        idents.push(self.get_current_token().unwrap());
+
+        while let Some(peek) = self.get_peek_token() {
+            match peek.kind {
+                TokenType::Period => {
+                    // idents.push(self.get_current_token().unwrap());
                     kind = IdentTypes::Normal;
                     self.consume_token();
                     if let Some(peek) = self.get_peek_token() {
@@ -176,7 +207,7 @@ impl<'a> Parser<'a> {
                     }
                 }
                 TokenType::Comma => {
-                    idents.push(self.get_current_token().unwrap());
+                    // idents.push(self.get_current_token().unwrap());
                     kind = IdentTypes::Destructuring;
                     self.consume_token();
                     if let Some(peek) = self.get_peek_token() {
@@ -192,7 +223,6 @@ impl<'a> Parser<'a> {
                     }
                 }
                 _ => {
-                    // idents.push(self.get_current_token().unwrap());
                     self.consume_token();
 
                     return (idents, kind);
@@ -201,6 +231,57 @@ impl<'a> Parser<'a> {
         }
 
         (idents, kind)
+    }
+
+    pub fn parse_function_expression(&mut self) -> Box<Expression<'a>> {
+        let token = self.get_current_token().unwrap();
+        self.consume_token();
+        let (idents, _) = self.parse_ident_literals();
+        println!("{:?}", idents);
+        if self.get_current_token().unwrap().kind != TokenType::Bar {
+            panic!("{} Parameter declarations in a function definition must be followed by a '|', received {:?} instead.", self.get_current_token().unwrap().position, self.get_current_token().unwrap().kind)
+        }
+
+        self.expect_peek(TokenType::Arrow, "defining a function");
+
+        // self.consume_token();
+        self.consume_token();
+
+        let current_tok = self.get_current_token();
+        if let Some(tok) = current_tok {
+            match tok.kind {
+                TokenType::LBrace => {
+                    let statements = self.parse_block_statement(TokenType::RBrace);
+                    println!("{:?}", self.get_current_token());
+                    // self.consume_token();
+                    return Box::new(Expression::FunctionLiteral {
+                        token,
+                        parameters: Box::new(Expression::DefinitionIdentifier { idents }),
+                        statements,
+                    });
+                }
+                _ => {
+                    let expr = self.parse_expression(Precedence::LOWEST).unwrap_or_else(|| panic!("{} When '{{' is not provided in the function body, Clay expects a single expression.", tok.position));
+                    let stmt = Statement::ReturnStatement {
+                        token: tok,
+                        value: expr,
+                    };
+                    let mut stmts: Vec<Statement<'a>> = Vec::new();
+                    stmts.push(stmt);
+
+                    return Box::new(Expression::FunctionLiteral {
+                        token,
+                        parameters: Box::new(Expression::DefinitionIdentifier { idents }),
+                        statements: Statement::BlockStatement {
+                            token: tok,
+                            statements: stmts,
+                        },
+                    });
+                }
+            }
+        } else {
+            panic!("{} Expected to see a function body after parameter declarations, but received nothing.", self.tokens[self.current_position-1]);
+        }
     }
 }
 
@@ -211,7 +292,7 @@ impl<'a> Parser<'a> {
             return match to.kind {
                 TokenType::Import => self.parse_import_statement(),
                 TokenType::Ident(_) => self.parse_identifier_statement(),
-                // TokenType::Ident(_) => self.parse_assignment_statement(),
+                TokenType::Return => self.parse_return_statement(),
                 _ => self.parse_expression_statement(),
             };
         } else {
@@ -247,7 +328,9 @@ impl<'a> Parser<'a> {
         let mut kind = IdentTypes::Destructuring;
         let (idents, _) = self.parse_ident_literals();
 
-        match self.get_current_token().unwrap().kind {
+        self.current_position -= 1;
+
+        match self.get_peek_token().unwrap().kind {
             TokenType::ColonEqual => {
                 kind = IdentTypes::Destructuring;
             }
@@ -255,9 +338,14 @@ impl<'a> Parser<'a> {
                 kind = IdentTypes::Normal;
             }
             _ => {
-                panic!("Expected token of kind ':=' or '=' in assignment statement.");
+                println!("current tok: {:?}", self.get_current_token());
+                let exp = self.parse_expression_statement();
+                println!("{:?}", exp);
+
+                return exp;
             }
         }
+        self.consume_token();
 
         let token = self.get_current_token().unwrap();
 
@@ -284,6 +372,35 @@ impl<'a> Parser<'a> {
         } else {
             panic!("Expected expression after assignment operator.")
         }
+    }
+
+    pub fn parse_return_statement(&mut self) -> Option<Statement<'a>> {
+        let token = self.get_current_token().unwrap();
+        self.consume_token();
+        println!("{:?}", self.get_current_token());
+        let value = self.parse_expression(Precedence::LOWEST).unwrap();
+        return Some(Statement::ReturnStatement { token, value });
+    }
+
+    pub fn parse_block_statement(&mut self, end_type: TokenType<'a>) -> Statement<'a> {
+        let token = self.get_current_token().unwrap();
+
+        self.consume_token();
+        let mut statements: Vec<Statement<'a>> = Vec::new();
+        while (self.get_current_token().unwrap().kind != end_type)
+            && self.current_position != self.tokens.len()
+        {
+            let statement = self.parse_statement();
+            match statement {
+                Some(statement) => {
+                    statements.push(statement);
+                    self.consume_token();
+                }
+                None => self.consume_token(),
+            }
+        }
+
+        return Statement::BlockStatement { token, statements };
     }
 }
 
@@ -326,8 +443,6 @@ impl<'a> Parser<'a> {
         return Some(prefix_exp);
     }
 
-    // pub fn
-
     pub fn prefix_fn(
         &mut self,
         kind: TokenType<'a>,
@@ -342,6 +457,10 @@ impl<'a> Parser<'a> {
             (TokenType::String(_), true) => (true, Some(self.parse_string_literal())),
             (TokenType::LParen, false) => (true, None),
             (TokenType::LParen, true) => (true, Some(self.parse_grouped_expression())),
+            (TokenType::Bar, false) => (true, None),
+            (TokenType::Bar, true) => (true, Some(self.parse_function_expression())),
+            (TokenType::Ident(_), false) => (true, None),
+            (TokenType::Ident(_), true) => (true, Some(self.parse_ident_literal())),
             _ => (false, None),
         }
     }
@@ -363,6 +482,7 @@ impl<'a> Parser<'a> {
             (TokenType::Asterisk, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
             (TokenType::Minus, false) => (true, None),
             (TokenType::Minus, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+
             (TokenType::PlusEqual, false) => (true, None),
             (TokenType::PlusEqual, true) => {
                 (true, Some(self.parse_infix_expression(left.unwrap())))
@@ -395,6 +515,8 @@ impl<'a> Parser<'a> {
             (TokenType::LTEq, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
             (TokenType::GTEq, false) => (true, None),
             (TokenType::GTEq, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
+            (TokenType::LParen, false) => (true, None),
+            (TokenType::LParen, true) => (true, Some(self.parse_call_expression(left.unwrap()))),
             _ => (false, None),
         }
     }
@@ -419,11 +541,51 @@ impl<'a> Parser<'a> {
         let expr = self.parse_expression(Precedence::LOWEST);
 
         if let Some(expr) = expr {
-            self.expect_peek(TokenType::RParen);
+            self.expect_peek(TokenType::RParen, "defining a grouped expression");
             return expr;
         } else {
             panic!("Expected some expression after opening bracket.");
         }
+    }
+
+    pub fn parse_call_expression(&mut self, fnLiteral: Box<Expression<'a>>) -> Box<Expression<'a>> {
+        let token = self.get_current_token().unwrap();
+
+        if token.kind != TokenType::LParen {
+            panic!("{} Function calls must start with token of type 'LParen', received '{:?}' instead.", token.position, token.kind);
+        }
+        // self.expect_peek(TokenType::LParen, "calling a function");
+        let parameters = self.parse_expression_list(TokenType::RParen);
+        return Box::new(Expression::CallExpression {
+            token,
+            parameters,
+            function: fnLiteral,
+        });
+    }
+
+    fn parse_expression_list(&mut self, end: TokenType) -> Vec<Box<Expression<'a>>> {
+        let mut exprs: Vec<Box<Expression<'a>>> = Vec::new();
+        if self.peek_is(end) {
+            self.consume_token();
+            return exprs;
+        }
+
+        self.consume_token();
+        exprs.push(self.parse_expression(Precedence::LOWEST).unwrap());
+        while self.get_peek_token().unwrap().kind == TokenType::Comma {
+            self.consume_token();
+            // self.consume_token();
+            exprs.push(self.parse_expression(Precedence::LOWEST).unwrap());
+        }
+
+        // self.expect_peek(end, "defining a function call");
+        println!(
+            "curToken: {:?}, peek: {:?}",
+            self.get_current_token(),
+            self.get_peek_token()
+        );
+
+        return exprs;
     }
 }
 
@@ -447,8 +609,24 @@ mod tests {
     #[test]
     fn ident_assign() {
         let test_str = r#"
-        x, z := 3 + 2
-        m.e = "3"
+        import http
+        z, x := (15 + 2) * 3
+        z = 5
+        "#;
+
+        println!(
+            "{:#?}",
+            Parser::new(Lexer::new(test_str).collect::<Vec<_>>()).parse_program()
+        );
+    }
+
+    #[test]
+    fn function_check() {
+        let test_str = r#"
+        x := (|z| -> {
+
+            return z
+        })("hi")
         "#;
 
         println!(
