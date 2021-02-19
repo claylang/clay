@@ -68,85 +68,125 @@ impl<'a> Iterator for Lexer<'a> {
             '.' => self.lex_single_char(TokenType::Period),
             '!' => match peek_char {
                 Some('=') => self.lex_double_char(TokenType::BangEqual),
-                None | Some(' ') | Some('\t') | Some('\r') => self.lex_single_char(TokenType::Bang),
-                _ => panic!("Undefined token."),
+                _ => self.lex_single_char(TokenType::Bang),
+                // _ => panic!(
+                //     "{} Found illegal token '{}'",
+                //     self.position,
+                //     String::from(current_char.unwrap()) + &String::from(peek_char.unwrap())[..]
+                // ),
             },
             '=' => match peek_char {
                 Some('=') => self.lex_double_char(TokenType::DoubleEqual),
-                None | Some(' ') | Some('\t') | Some('\r') => {
+                _ => {
                     self.lex_single_char(TokenType::Equal)
                 }
-                _ => panic!("Undefined token."),
+                // _ => panic!(
+                //     "{} Found illegal token '{}'",
+                //     self.position,
+                //     String::from(current_char.unwrap()) + &String::from(peek_char.unwrap())[..]
+                // ),
             },
 
-            '=' => match peek_char {
-                Some('=') => self.lex_double_char(TokenType::DoubleEqual),
-                None | Some(' ') | Some('\t') | Some('\r') => {
-                    self.lex_single_char(TokenType::Equal)
-                }
-                _ => panic!("Undefined token."),
-            },
-
-            '|' => match peek_char {
-                Some('|') => self.lex_double_char(TokenType::Or),
-                None | Some(' ') | Some('\t') | Some('\r') => self.lex_single_char(TokenType::Bar),
-                _ => panic!("Undefined token."),
-            },
+            // '=' => match peek_char {
+            //     Some('=') => self.lex_double_char(TokenType::DoubleEqual),
+            //     None | Some(' ') | Some('\t') | Some('\r') => {
+            //         self.lex_single_char(TokenType::Equal)
+            //     }
+            //     _ => panic!(
+            //         "{} Found illegal token '{}'",
+            //         self.position,
+            //         String::from(current_char.unwrap()) + &String::from(peek_char.unwrap())[..]
+            //     ),
+            // },
+            '|' => self.lex_single_char(TokenType::Bar),
 
             '&' => match peek_char {
                 Some('&') => self.lex_double_char(TokenType::And),
-                None | Some(' ') | Some('\t') | Some('\r') => {
+                _ => {
                     self.lex_single_char(TokenType::Ampersand)
                 }
-                _ => panic!("Undefined token."),
+                // _ => panic!(
+                //     "{} Found illegal token '{}'",
+                //     self.position,
+                //     String::from(current_char.unwrap()) + &String::from(peek_char.unwrap())[..]
+                // ),
             },
             '+' => match peek_char {
                 Some('=') => self.lex_double_char(TokenType::PlusEqual),
-                None | Some(' ') | Some('\t') | Some('\r') => self.lex_single_char(TokenType::Plus),
-                _ => panic!("Undefined token."),
+                _ => self.lex_single_char(TokenType::Plus),
+                // _ => panic!(
+                //     "{} Found illegal token '{}'",
+                //     self.position,
+                //     String::from(current_char.unwrap()) + &String::from(peek_char.unwrap())[..]
+                // ),
             },
             '-' => match peek_char {
                 Some('=') => self.lex_double_char(TokenType::MinusEqual),
-                None | Some(' ') | Some('\t') | Some('\r') => {
+                Some('>') => self.lex_double_char(TokenType::Arrow),
+                _ => {
                     self.lex_single_char(TokenType::Minus)
                 }
-                _ => panic!("Undefined token."),
+                // _ => panic!(
+                //     "{} Found illegal token '{}'",
+                //     self.position,
+                //     String::from(current_char.unwrap()) + &String::from(peek_char.unwrap())[..]
+                // ),
             },
             '/' => match peek_char {
                 Some('=') => self.lex_double_char(TokenType::SlashEqual),
-                None | Some(' ') | Some('\t') | Some('\r') => {
+                _ => {
                     self.lex_single_char(TokenType::Slash)
                 }
-                _ => panic!("Undefined token."),
+                // _ => panic!(
+                //     "{} Found illegal token '{}'",
+                //     self.position,
+                //     String::from(current_char.unwrap()) + &String::from(peek_char.unwrap())[..]
+                // ),
             },
 
             '*' => match peek_char {
                 Some('=') => self.lex_double_char(TokenType::AsteriskEqual),
-                None | Some(' ') | Some('\t') | Some('\r') => {
+                _ => {
                     self.lex_single_char(TokenType::Asterisk)
                 }
-                _ => panic!("Undefined token."),
+                // _ => panic!(
+                //     "{} Found illegal token '{}'",
+                //     self.position,
+                //     String::from(current_char.unwrap()) + &String::from(peek_char.unwrap())[..]
+                // ),
             },
             '<' => match peek_char {
                 Some('=') => self.lex_double_char(TokenType::LTEq),
-                None | Some(' ') | Some('\t') | Some('\r') => {
+                _ => {
                     self.lex_single_char(TokenType::Asterisk)
                 }
-                _ => panic!("Undefined token."),
+                // _ => panic!(
+                //     "{} Found illegal token '{}'",
+                //     self.position,
+                //     String::from(current_char.unwrap()) + &String::from(peek_char.unwrap())[..]
+                // ),
             },
             '>' => match peek_char {
                 Some('=') => self.lex_double_char(TokenType::GTEq),
-                None | Some(' ') | Some('\t') | Some('\r') => {
+                _ => {
                     self.lex_single_char(TokenType::Asterisk)
                 }
-                _ => panic!("Undefined token."),
+                // _ => panic!(
+                //     "{} Found illegal token '{}'",
+                //     self.position,
+                //     String::from(current_char.unwrap()) + &String::from(peek_char.unwrap())[..]
+                // ),
             },
             ':' => match peek_char {
                 Some('=') => self.lex_double_char(TokenType::ColonEqual),
-                None | Some(' ') | Some('\t') | Some('\r') => {
+                _ => {
                     self.lex_single_char(TokenType::Colon)
                 }
-                _ => panic!("Undefined token."),
+                // _ => panic!(
+                //     "{} Found illegal token '{}'",
+                //     self.position,
+                //     String::from(current_char.unwrap()) + &String::from(peek_char.unwrap())[..]
+                // ),
             },
 
             '0'..='9' => {
@@ -244,7 +284,11 @@ impl<'a> Iterator for Lexer<'a> {
                 self.next()
             }
 
-            _ => panic!("Undefined token."),
+            _ => panic!(
+                "{} Found illegal token '{}'",
+                self.position,
+                String::from(current_char.unwrap()) + &String::from(peek_char.unwrap())[..]
+            ),
         }
     }
 }
