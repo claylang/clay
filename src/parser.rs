@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::{
     ast::{Expression, MatchPairExpression, Program, Statement},
     errors::error,
-    token::{Token, TokenType},
+    token::{self, Token, TokenType},
 };
 
 #[derive(Debug, PartialOrd, PartialEq)]
@@ -273,8 +273,6 @@ impl<'a> Parser<'a> {
             error(format!("{} A function needs to have a body, but I couldn't find any after the declaration.", self.tokens[self.current_position-1].position));
         }
 
-        // self.expect_peek(TokenType::Arrow, "defining a function");
-
         self.consume_token();
 
         let current_tok = self.get_current_token();
@@ -282,7 +280,7 @@ impl<'a> Parser<'a> {
             match tok.kind {
                 TokenType::LBrace => {
                     let statements = self.parse_block_statement(TokenType::RBrace);
-
+                    // self.consume_token();
                     return Box::new(Expression::FunctionLiteral {
                         token,
                         parameters: Box::new(Expression::DefinitionIdentifier { idents }),
@@ -299,6 +297,7 @@ impl<'a> Parser<'a> {
                     let mut stmts: Vec<Statement<'a>> = Vec::new();
                     stmts.push(stmt);
 
+                    self.consume_token();
                     return Box::new(Expression::FunctionLiteral {
                         token,
                         parameters: Box::new(Expression::DefinitionIdentifier { idents }),
@@ -313,6 +312,17 @@ impl<'a> Parser<'a> {
             error(format!("{} Expected to see a function body after parameter declarations, but received nothing.", self.tokens[self.current_position-1]));
             panic!();
         }
+    }
+
+    pub fn parse_array_literal(&mut self) -> Box<Expression<'a>> {
+        println!("Hi!");
+        let token = self.get_current_token().unwrap();
+        let expressions = self.parse_expression_list(TokenType::RBracket);
+
+        return Box::new(Expression::ArrayLiteral {
+            token,
+            elements: expressions,
+        });
     }
 }
 
@@ -499,6 +509,8 @@ impl<'a> Parser<'a> {
             (TokenType::String(_), true) => (true, Some(self.parse_string_literal())),
             (TokenType::LParen, false) => (true, None),
             (TokenType::LParen, true) => (true, Some(self.parse_grouped_expression())),
+            (TokenType::LBracket, false) => (true, None),
+            (TokenType::LBracket, true) => (true, Some(self.parse_array_literal())),
             (TokenType::Bar, false) => (true, None),
             (TokenType::Bar, true) => (true, Some(self.parse_function_expression())),
             (TokenType::Ident(_), false) => (true, None),
@@ -602,7 +614,6 @@ impl<'a> Parser<'a> {
         if token.kind != TokenType::LParen {
             error(format!("{} Function calls must start with token of type 'LParen', received '{:?}' instead.", token.position, token.kind));
         }
-        // self.expect_peek(TokenType::LParen, "calling a function");
         let parameters = self.parse_expression_list(TokenType::RParen);
         return Box::new(Expression::CallExpression {
             token,
@@ -620,10 +631,14 @@ impl<'a> Parser<'a> {
 
         self.consume_token();
         exprs.push(self.parse_expression(Precedence::LOWEST).unwrap());
-        while self.get_peek_token().unwrap().kind == TokenType::Comma {
-            self.consume_token();
+        while self.get_current_token().unwrap().kind != end {
             // self.consume_token();
-            exprs.push(self.parse_expression(Precedence::LOWEST).unwrap());
+            println!("{:?}", self.get_current_token());
+            if let Some(expr) = self.parse_expression(Precedence::LOWEST) {
+                exprs.push(expr)
+            }
+            // exprs.push(.unwrap());
+            self.consume_token();
         }
 
         return exprs;
@@ -790,13 +805,31 @@ mod tests {
         x := (|z, m| -> {
             return m + z.length
         })("hi", 2)
+
+        z := "hi"
         "#;
+
+        let lexer = Lexer::new(test_str).collect::<Vec<_>>();
+        let parser = Parser::new(lexer).parse_program();
+        println!("{:#?}", parser);
     }
 
     #[test]
     fn match_check() {
         let test_str = r#"
         x := |n| -> x match { 5, x -> "five", x, _ -> "z", _ -> "not five :)"}
+        "#;
+
+        let lexer = Lexer::new(test_str).collect::<Vec<_>>();
+        let parser = Parser::new(lexer).parse_program();
+        println!("{:#?}", parser);
+    }
+
+    #[test]
+    fn arr_check() {
+        let test_str = r#"
+        arr := ["hi", 3, 4, 5]
+        mapped := (arr.map((|v| -> v + 2)))
         "#;
 
         let lexer = Lexer::new(test_str).collect::<Vec<_>>();

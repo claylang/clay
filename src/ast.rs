@@ -19,7 +19,7 @@ pub enum Expression<'a> {
     },
     ArrayLiteral {
         token: Token<'a>,
-        elements: Vec<Expression<'a>>,
+        elements: Vec<Box<Expression<'a>>>,
     },
     BooleanLiteral {
         token: Token<'a>,
