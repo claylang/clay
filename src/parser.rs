@@ -1,6 +1,9 @@
+use core::panic;
+
 use crate::{
     ast::{Expression, Program, Statement},
-    lexer::token::{Token, TokenType},
+    errors::error,
+    token::{Token, TokenType},
 };
 
 #[derive(Debug, PartialOrd, PartialEq)]
@@ -44,7 +47,7 @@ impl Precedence {
     }
 }
 
-struct Parser<'a> {
+pub struct Parser<'a> {
     tokens: Vec<Token<'a>>,
     current_position: usize,
 }
@@ -82,11 +85,15 @@ impl<'a, 'b> Parser<'a> {
                 self.consume_token();
                 return true;
             } else {
-                panic!("{} Expected token of type '{:?}' to be after token of type '{:?}' when {}, received '{:?}' instead.", peek.position, kind, current_tok.kind, reason, peek.kind);
+                error(format!("{} Expected token of type '{:?}' to be after token of type '{:?}' when {}, received '{:?}' instead.", peek.position, kind, current_tok.kind, reason, peek.kind));
                 return false;
             }
         } else {
-            panic!("{} Out of index for peek token.", current_tok.position);
+            error(format!(
+                "{} Out of index for peek token.",
+                current_tok.position
+            ));
+            return false;
         }
     }
 
@@ -94,7 +101,8 @@ impl<'a, 'b> Parser<'a> {
         if let Some(peek) = self.get_peek_token() {
             return kind == peek.kind;
         } else {
-            panic!("Out of index for peek token.")
+            error(format!("Out of index for peek token."));
+            return false;
         }
     }
 
@@ -167,10 +175,10 @@ impl<'a> Parser<'a> {
                                 self.consume_token();
                                 idents.push(self.get_current_token().unwrap());
                             }
-                            _ => panic!("Expected Ident after period."),
+                            _ => error(format!("Expected Ident after period.")),
                         }
                     } else {
-                        panic!("Expected Ident after period.");
+                        error(format!("Expected Ident after period."));
                     }
                 }
                 _ => {
@@ -186,7 +194,11 @@ impl<'a> Parser<'a> {
         let mut kind = IdentTypes::Destructuring;
 
         let mut idents: Vec<Token<'a>> = Vec::new();
-        idents.push(self.get_current_token().unwrap());
+        if let Some(t) = self.get_current_token() {
+            if let TokenType::Ident(_) = t.kind {
+                idents.push(self.get_current_token().unwrap());
+            }
+        }
 
         while let Some(peek) = self.get_peek_token() {
             match peek.kind {
@@ -200,10 +212,10 @@ impl<'a> Parser<'a> {
                                 self.consume_token();
                                 idents.push(self.get_current_token().unwrap());
                             }
-                            _ => panic!("Expected IDEnt after period."),
+                            _ => error(format!("Expected IDEnt after period.")),
                         }
                     } else {
-                        panic!("Expected IDEnt after period.");
+                        error(format!("Expected IDEnt after period."));
                     }
                 }
                 TokenType::Comma => {
@@ -216,10 +228,10 @@ impl<'a> Parser<'a> {
                                 self.consume_token();
                                 idents.push(self.get_current_token().unwrap());
                             }
-                            _ => panic!("Expected IDEnt after comma."),
+                            _ => error(format!("Expected IDEnt after comma.")),
                         }
                     } else {
-                        panic!("Expected IDEnt after comma.");
+                        error(format!("Expected IDEnt after comma."));
                     }
                 }
                 _ => {
@@ -237,14 +249,22 @@ impl<'a> Parser<'a> {
         let token = self.get_current_token().unwrap();
         self.consume_token();
         let (idents, _) = self.parse_ident_literals();
+        println!("{:?}", idents);
 
-        if self.get_current_token().unwrap().kind != TokenType::Bar {
-            panic!("{} Parameter declarations in a function definition must be followed by a '|', received {:?} instead.", self.get_current_token().unwrap().position, self.get_current_token().unwrap().kind)
+        if idents.len() != 0 && self.get_current_token().unwrap().kind != TokenType::Bar {
+            error(format!("{} Parameter declarations in a function definition must be followed by a '|', received {:?} instead.", self.get_current_token().unwrap().position, self.get_current_token().unwrap().kind))
         }
 
-        self.expect_peek(TokenType::Arrow, "defining a function");
+        if let Some(tok) = self.get_current_token() {
+            if tok.kind != TokenType::Arrow {
+                error(format!("{} Expected '->' to follow function parameter declarations, received {:?} instead. Make sure your bar pair is followed by an arrow.", tok.position, tok.kind));
+            }
+        } else {
+            error(format!("{} A function needs to have a body, but I couldn't find any after the declaration.", self.tokens[self.current_position-1].position));
+        }
 
-        // self.consume_token();
+        // self.expect_peek(TokenType::Arrow, "defining a function");
+
         self.consume_token();
 
         let current_tok = self.get_current_token();
@@ -253,7 +273,6 @@ impl<'a> Parser<'a> {
                 TokenType::LBrace => {
                     let statements = self.parse_block_statement(TokenType::RBrace);
 
-                    // self.consume_token();
                     return Box::new(Expression::FunctionLiteral {
                         token,
                         parameters: Box::new(Expression::DefinitionIdentifier { idents }),
@@ -261,7 +280,8 @@ impl<'a> Parser<'a> {
                     });
                 }
                 _ => {
-                    let expr = self.parse_expression(Precedence::LOWEST).unwrap_or_else(|| panic!("{} When '{{' is not provided in the function body, Clay expects a single expression.", tok.position));
+                    let expr = self.parse_expression(Precedence::LOWEST).unwrap_or_else(|| {error(format!("{} When '{{' is not provided in the function body, Clay expects a single expression.", tok.position));
+                panic!()});
                     let stmt = Statement::ReturnStatement {
                         token: tok,
                         value: expr,
@@ -280,7 +300,8 @@ impl<'a> Parser<'a> {
                 }
             }
         } else {
-            panic!("{} Expected to see a function body after parameter declarations, but received nothing.", self.tokens[self.current_position-1]);
+            error(format!("{} Expected to see a function body after parameter declarations, but received nothing.", self.tokens[self.current_position-1]));
+            panic!();
         }
     }
 }
@@ -327,48 +348,59 @@ impl<'a> Parser<'a> {
     pub fn parse_identifier_statement(&mut self) -> Option<Statement<'a>> {
         let mut kind = IdentTypes::Destructuring;
         let (idents, _) = self.parse_ident_literals();
-
-        self.current_position -= 1;
-
-        match self.get_peek_token().unwrap().kind {
-            TokenType::ColonEqual => {
-                kind = IdentTypes::Destructuring;
-            }
-            TokenType::Equal => {
-                kind = IdentTypes::Normal;
-            }
-            _ => {
-                let exp = self.parse_expression_statement();
-
-                return exp;
+        if let Some(token) = self.get_current_token() {
+            match token.kind {
+                TokenType::Ident(_) => {}
+                _ => self.current_position -= 1,
             }
         }
-        self.consume_token();
 
-        let token = self.get_current_token().unwrap();
-
-        self.consume_token();
-        let expr = self.parse_expression(Precedence::LOWEST);
-
-        if let Some(expression) = expr {
-            match kind {
-                IdentTypes::Destructuring => {
-                    return Some(Statement::AssignStatement {
-                        token,
-                        expression,
-                        defined: Box::new(Expression::DefinitionIdentifier { idents }),
-                    })
+        if let Some(token) = self.get_peek_token() {
+            match self.get_peek_token().unwrap().kind {
+                TokenType::ColonEqual => {
+                    kind = IdentTypes::Destructuring;
                 }
-                IdentTypes::Normal => {
-                    return Some(Statement::UpdateStatement {
-                        token,
-                        expression,
-                        ident: Box::new(Expression::NormalIdentifier { idents }),
-                    })
+                TokenType::Equal => {
+                    kind = IdentTypes::Normal;
+                }
+                _ => {
+                    let exp = self.parse_expression_statement();
+
+                    return exp;
                 }
             }
+            self.consume_token();
+
+            let token = self.get_current_token().unwrap();
+
+            self.consume_token();
+            let expr = self.parse_expression(Precedence::LOWEST);
+
+            if let Some(expression) = expr {
+                match kind {
+                    IdentTypes::Destructuring => {
+                        return Some(Statement::AssignStatement {
+                            token,
+                            expression,
+                            defined: Box::new(Expression::DefinitionIdentifier { idents }),
+                        })
+                    }
+                    IdentTypes::Normal => {
+                        return Some(Statement::UpdateStatement {
+                            token,
+                            expression,
+                            ident: Box::new(Expression::NormalIdentifier { idents }),
+                        })
+                    }
+                }
+            } else {
+                error(format!("Expected expression after assignment operator."));
+                panic!();
+            }
         } else {
-            panic!("Expected expression after assignment operator.")
+            let exp = self.parse_expression_statement();
+
+            return exp;
         }
     }
 
@@ -542,22 +574,26 @@ impl<'a> Parser<'a> {
             self.expect_peek(TokenType::RParen, "defining a grouped expression");
             return expr;
         } else {
-            panic!("Expected some expression after opening bracket.");
+            error(format!("Expected some expression after opening bracket."));
+            panic!();
         }
     }
 
-    pub fn parse_call_expression(&mut self, fnLiteral: Box<Expression<'a>>) -> Box<Expression<'a>> {
+    pub fn parse_call_expression(
+        &mut self,
+        fn_literal: Box<Expression<'a>>,
+    ) -> Box<Expression<'a>> {
         let token = self.get_current_token().unwrap();
 
         if token.kind != TokenType::LParen {
-            panic!("{} Function calls must start with token of type 'LParen', received '{:?}' instead.", token.position, token.kind);
+            error(format!("{} Function calls must start with token of type 'LParen', received '{:?}' instead.", token.position, token.kind));
         }
         // self.expect_peek(TokenType::LParen, "calling a function");
         let parameters = self.parse_expression_list(TokenType::RParen);
         return Box::new(Expression::CallExpression {
             token,
             parameters,
-            function: fnLiteral,
+            function: fn_literal,
         });
     }
 
@@ -582,7 +618,7 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::lexer::Lexer;
+    use crate::lexer::Lexer;
     use crate::parser::Parser;
     #[test]
     fn full_test() {
@@ -608,10 +644,9 @@ mod tests {
     #[test]
     fn function_check() {
         let test_str = r#"
-        x := (|z| -> {
-
-            return z.length
-        })("hi")
+        x := (|z, m| -> {
+            return m + z.length
+        })("hi", 2)
         "#;
     }
 }
