@@ -69,6 +69,7 @@ impl<'a> Iterator for Lexer<'a> {
             '}' => self.lex_single_char(TokenType::RBrace),
             ',' => self.lex_single_char(TokenType::Comma),
             '.' => self.lex_single_char(TokenType::Period),
+            '_' => self.lex_single_char(TokenType::Underscore),
             '!' => match peek_char {
                 Some('=') => self.lex_double_char(TokenType::BangEqual),
                 _ => self.lex_single_char(TokenType::Bang),
