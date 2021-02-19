@@ -41,7 +41,13 @@ pub enum Expression<'a> {
     },
     FunctionLiteral {
         token: Token<'a>,
-        parameters: Vec<Expression<'a>>,
+        parameters: Box<Expression<'a>>,
+        statements: Statement<'a>,
+    },
+    CallExpression {
+        token: Token<'a>,
+        parameters: Vec<Box<Expression<'a>>>,
+        function: Box<Expression<'a>>,
     },
 
     PrefixExpression {
