@@ -24,6 +24,9 @@ pub enum Expression<'a> {
     BooleanLiteral {
         token: Token<'a>,
     },
+    UnderscoreLiteral {
+        token: Token<'a>,
+    },
     IntegerLiteral {
         token: Token<'a>,
     },
@@ -67,6 +70,18 @@ pub enum Expression<'a> {
         consequence: Statement<'a>,
         alternative: Statement<'a>,
     },
+
+    MatchExpression {
+        token: Token<'a>,
+        default: Option<Statement<'a>>,
+        pairs: Vec<MatchPairExpression<'a>>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchPairExpression<'a> {
+    pub statement: Statement<'a>,
+    pub predicate: Vec<Box<Expression<'a>>>,
 }
 
 #[derive(Debug, Clone)]
