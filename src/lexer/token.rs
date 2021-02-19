@@ -20,6 +20,7 @@ pub enum TokenType<'a> {
     LTEq,
     GT,
     GTEq,
+    Arrow,
 
     Period,
     Semicolon,
@@ -43,6 +44,7 @@ pub enum TokenType<'a> {
     Ident(&'a str),
     Match,
     Import,
+    Return,
 }
 
 impl<'a> TokenType<'a> {
@@ -50,6 +52,7 @@ impl<'a> TokenType<'a> {
         match string {
             "match" => TokenType::Match,
             "import" => TokenType::Import,
+            "return" => TokenType::Return,
             _ => TokenType::Ident(string),
         }
     }
@@ -74,7 +77,17 @@ impl<'a> Token<'a> {
         }
     }
 }
+impl<'a> std::fmt::Display for Token<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({:?} @ {})", self.kind, self.position)
+    }
+}
 
+impl std::fmt::Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        write!(f, "({}, {})", self.line, self.column)
+    }
+}
 #[derive(Debug, Clone, Copy)]
 pub struct Position {
     pub line: usize,
