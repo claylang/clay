@@ -22,6 +22,7 @@ pub enum TokenType<'a> {
     GT,
     GTEq,
     Arrow,
+    Underscore,
 
     Period,
     Semicolon,
