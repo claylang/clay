@@ -237,7 +237,7 @@ impl<'a> Parser<'a> {
         let token = self.get_current_token().unwrap();
         self.consume_token();
         let (idents, _) = self.parse_ident_literals();
-        println!("{:?}", idents);
+
         if self.get_current_token().unwrap().kind != TokenType::Bar {
             panic!("{} Parameter declarations in a function definition must be followed by a '|', received {:?} instead.", self.get_current_token().unwrap().position, self.get_current_token().unwrap().kind)
         }
@@ -252,7 +252,7 @@ impl<'a> Parser<'a> {
             match tok.kind {
                 TokenType::LBrace => {
                     let statements = self.parse_block_statement(TokenType::RBrace);
-                    println!("{:?}", self.get_current_token());
+
                     // self.consume_token();
                     return Box::new(Expression::FunctionLiteral {
                         token,
@@ -338,9 +338,7 @@ impl<'a> Parser<'a> {
                 kind = IdentTypes::Normal;
             }
             _ => {
-                println!("current tok: {:?}", self.get_current_token());
                 let exp = self.parse_expression_statement();
-                println!("{:?}", exp);
 
                 return exp;
             }
@@ -377,7 +375,7 @@ impl<'a> Parser<'a> {
     pub fn parse_return_statement(&mut self) -> Option<Statement<'a>> {
         let token = self.get_current_token().unwrap();
         self.consume_token();
-        println!("{:?}", self.get_current_token());
+
         let value = self.parse_expression(Precedence::LOWEST).unwrap();
         return Some(Statement::ReturnStatement { token, value });
     }
@@ -407,7 +405,7 @@ impl<'a> Parser<'a> {
 impl<'a> Parser<'a> {
     pub fn parse_expression(&mut self, precedence: Precedence) -> Option<Box<Expression<'a>>> {
         let prefix_tok = self.get_current_token().unwrap().kind;
-        println!("{:?}", prefix_tok);
+
         let prefix = self.prefix_fn(prefix_tok, false);
 
         if !prefix.0 {
@@ -578,13 +576,6 @@ impl<'a> Parser<'a> {
             exprs.push(self.parse_expression(Precedence::LOWEST).unwrap());
         }
 
-        // self.expect_peek(end, "defining a function call");
-        println!(
-            "curToken: {:?}, peek: {:?}",
-            self.get_current_token(),
-            self.get_peek_token()
-        );
-
         return exprs;
     }
 }
@@ -601,9 +592,8 @@ mod tests {
         "#;
         let l = Lexer::new(test_str);
         let z = l.collect::<Vec<_>>();
-        println!("{:#?}", z);
+
         let mut p = Parser::new(z);
-        println!("{:#?}", p.parse_program());
     }
 
     #[test]
@@ -613,11 +603,6 @@ mod tests {
         z, x := (15 + 2) * 3
         z = 5
         "#;
-
-        println!(
-            "{:#?}",
-            Parser::new(Lexer::new(test_str).collect::<Vec<_>>()).parse_program()
-        );
     }
 
     #[test]
@@ -625,13 +610,8 @@ mod tests {
         let test_str = r#"
         x := (|z| -> {
 
-            return z
+            return z.length
         })("hi")
         "#;
-
-        println!(
-            "{:#?}",
-            Parser::new(Lexer::new(test_str).collect::<Vec<_>>()).parse_program()
-        );
     }
 }
