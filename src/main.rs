@@ -3,6 +3,8 @@ use std::{
     io::{self, Write},
 };
 
+use colored::Colorize;
+
 mod ast;
 mod errors;
 mod lexer;
@@ -13,11 +15,14 @@ fn main() -> io::Result<()> {
 
     match args.len() {
         1 => {
-            println!("Clay language REPL @{}", "0.0.1");
-            println!("Type `exit` to exit.");
+            println!(
+                "Clay language REPL @{}",
+                "0.0.1".on_bright_magenta().black()
+            );
+            println!("Type `exit` to exit.\n");
 
             loop {
-                print!("{}", "#> ");
+                print!("{} ", "#>".on_bright_yellow().black());
                 io::stdout().flush()?;
 
                 let mut input = String::new();
@@ -29,7 +34,7 @@ fn main() -> io::Result<()> {
                         let tokens = lexer::Lexer::new(input.trim()).collect::<Vec<_>>();
                         let stack = parser::Parser::new(tokens).parse_program();
 
-                        println!("{:#?}", stack);
+                        println!("\n{:#?}\n", stack);
                     }
                 }
             }
