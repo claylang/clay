@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::lexer::token::Token;
+use crate::token::Token;
 
 #[derive(Debug, Clone)]
 pub struct Program<'a> {
