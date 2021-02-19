@@ -1,13 +1,14 @@
 use core::panic;
+use std::collections::HashMap;
 
 use crate::{
-    ast::{Expression, Program, Statement},
+    ast::{Expression, MatchPairExpression, Program, Statement},
     errors::error,
     token::{Token, TokenType},
 };
 
 #[derive(Debug, PartialOrd, PartialEq)]
-enum Precedence {
+pub enum Precedence {
     LOWEST = 0,
     AND = 1,
     OR = 2,
@@ -18,9 +19,10 @@ enum Precedence {
     PREFIX = 7,
     CALL = 8,
     INDEX = 9,
+    MATCH = 10,
 }
 
-enum IdentTypes {
+pub enum IdentTypes {
     Destructuring,
     Normal,
 }
@@ -42,6 +44,7 @@ impl Precedence {
             TokenType::Slash => Some(Precedence::PRODUCT),
             TokenType::LParen => Some(Precedence::CALL),
             TokenType::LBracket => Some(Precedence::INDEX),
+            TokenType::Match => Some(Precedence::MATCH),
             _ => Some(Precedence::LOWEST),
         }
     }
@@ -161,6 +164,12 @@ impl<'a> Parser<'a> {
         })
     }
 
+    pub fn parse_underscore_literal(&self) -> Box<Expression<'a>> {
+        Box::new(Expression::UnderscoreLiteral {
+            token: self.get_current_token().unwrap(),
+        })
+    }
+
     pub fn parse_ident_literal(&mut self) -> Box<Expression<'a>> {
         let mut idents: Vec<Token<'a>> = Vec::new();
         idents.push(self.get_current_token().unwrap());
@@ -249,11 +258,12 @@ impl<'a> Parser<'a> {
         let token = self.get_current_token().unwrap();
         self.consume_token();
         let (idents, _) = self.parse_ident_literals();
-        println!("{:?}", idents);
 
         if idents.len() != 0 && self.get_current_token().unwrap().kind != TokenType::Bar {
             error(format!("{} Parameter declarations in a function definition must be followed by a '|', received {:?} instead.", self.get_current_token().unwrap().position, self.get_current_token().unwrap().kind))
         }
+
+        self.consume_token();
 
         if let Some(tok) = self.get_current_token() {
             if tok.kind != TokenType::Arrow {
@@ -451,9 +461,9 @@ impl<'a> Parser<'a> {
                 .get_peek_precedence()
                 .unwrap_or_else(|| Precedence::LOWEST)
         {
-            let z = self.get_peek_token().unwrap().kind;
+            let peek = self.get_peek_token().unwrap().kind;
 
-            let (infix_exists, _) = self.infix_fn(z, false, None);
+            let (infix_exists, _) = self.infix_fn(peek, false, None);
 
             if !infix_exists {
                 return Some(prefix_exp);
@@ -481,6 +491,8 @@ impl<'a> Parser<'a> {
         match (kind, execute) {
             (TokenType::Integer(_), false) => (true, None),
             (TokenType::Integer(_), true) => (true, Some(self.parse_integer_literal())),
+            (TokenType::Underscore, false) => (true, None),
+            (TokenType::Underscore, true) => (true, Some(self.parse_underscore_literal())),
             (TokenType::Float(_), false) => (true, None),
             (TokenType::Float(_), true) => (true, Some(self.parse_float_literal())),
             (TokenType::String(_), false) => (true, None),
@@ -547,6 +559,8 @@ impl<'a> Parser<'a> {
             (TokenType::GTEq, true) => (true, Some(self.parse_infix_expression(left.unwrap()))),
             (TokenType::LParen, false) => (true, None),
             (TokenType::LParen, true) => (true, Some(self.parse_call_expression(left.unwrap()))),
+            (TokenType::Match, false) => (true, None),
+            (TokenType::Match, true) => (true, Some(self.parse_match_expression(left.unwrap()))),
             _ => (false, None),
         }
     }
@@ -614,6 +628,135 @@ impl<'a> Parser<'a> {
 
         return exprs;
     }
+
+    fn parse_match_expression(&mut self, expression: Box<Expression<'a>>) -> Box<Expression<'a>> {
+        let token = self.get_current_token().unwrap();
+
+        self.expect_peek(
+            TokenType::LBrace,
+            "defining the opening of a match expression",
+        );
+
+        let mut pairs: Vec<MatchPairExpression<'a>> = Vec::new();
+        let mut default: Option<Statement<'a>> = None;
+        self.consume_token();
+
+        while self.get_peek_token().unwrap().kind != TokenType::RBrace {
+            let mut destructures: Vec<Box<Expression<'a>>> = Vec::new();
+            let mut statements: Vec<Statement<'a>> = Vec::new();
+            let expr = self.parse_expression(Precedence::LOWEST).unwrap();
+
+            match *expr {
+                Expression::UnderscoreLiteral { token } => {
+                    self.expect_peek(TokenType::Arrow, "defining a match clause");
+
+                    if let Some(peek) = self.get_peek_token() {
+                        match peek.kind {
+                            TokenType::LBrace => {
+                                self.consume_token();
+                                let statement = self.parse_block_statement(TokenType::RBrace);
+                                default = Some(statement);
+                            }
+                            _ => {
+                                let token = self.get_current_token().unwrap();
+                                self.consume_token();
+                                let expression = self.parse_expression(Precedence::LOWEST).unwrap(); // TODO: Error check
+                                statements.push(Statement::ReturnStatement {
+                                    token,
+                                    value: expression,
+                                });
+                                default = Some(Statement::BlockStatement { statements, token })
+                            }
+                        }
+                    } else {
+                        error(format!(
+                            "{} Expected expression or statement after match predicate.",
+                            self.get_current_token().unwrap().position
+                        ))
+                    }
+
+                    if let Some(peek) = self.get_peek_token() {
+                        if peek.kind == TokenType::Comma {
+                            self.consume_token();
+                            self.consume_token();
+                        }
+                    }
+
+                    continue;
+                }
+                _ => {
+                    destructures.push(expr);
+                }
+            }
+
+            // self.expect_peek(TokenType::Arrow, "defining a match clause");
+
+            while let Some(peek) = self.get_peek_token() {
+                match peek.kind {
+                    TokenType::Comma => {
+                        self.consume_token();
+                        if let Some(peek2) = self.get_peek_token() {
+                            self.consume_token();
+                            destructures.push(self.parse_expression(Precedence::LOWEST).unwrap());
+                        } else {
+                            error(format!("{} Expected some token after comma", peek.position));
+                            panic!()
+                        }
+                    }
+                    _ => {
+                        // self.consume_token();
+                        break;
+                    }
+                }
+            }
+
+            self.expect_peek(TokenType::Arrow, "defining a match clause");
+
+            if let Some(peek) = self.get_peek_token() {
+                match peek.kind {
+                    TokenType::LBrace => {
+                        self.consume_token();
+                        let statement = self.parse_block_statement(TokenType::RBrace);
+                        pairs.push(MatchPairExpression {
+                            predicate: destructures,
+                            statement,
+                        });
+                    }
+                    _ => {
+                        let token = self.get_current_token().unwrap();
+                        self.consume_token();
+                        let expression = self.parse_expression(Precedence::LOWEST).unwrap(); // TODO: Error check
+                        statements.push(Statement::ReturnStatement {
+                            token,
+                            value: expression,
+                        });
+                        pairs.push(MatchPairExpression {
+                            predicate: destructures,
+                            statement: Statement::BlockStatement { statements, token },
+                        });
+                    }
+                }
+            } else {
+                error(format!(
+                    "{} Expected expression or statement after match predicate.",
+                    self.get_current_token().unwrap().position
+                ))
+            }
+
+            if let Some(peek) = self.get_peek_token() {
+                if peek.kind == TokenType::Comma {
+                    self.consume_token();
+                    self.consume_token();
+                }
+            }
+        }
+
+        Box::new(Expression::MatchExpression {
+            token,
+            default,
+            pairs,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -648,5 +791,16 @@ mod tests {
             return m + z.length
         })("hi", 2)
         "#;
+    }
+
+    #[test]
+    fn match_check() {
+        let test_str = r#"
+        x := |n| -> x match { 5, x -> "five", x, _ -> "z", _ -> "not five :)"}
+        "#;
+
+        let lexer = Lexer::new(test_str).collect::<Vec<_>>();
+        let parser = Parser::new(lexer).parse_program();
+        println!("{:#?}", parser);
     }
 }
