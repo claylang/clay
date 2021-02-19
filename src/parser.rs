@@ -170,8 +170,12 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub fn parse_ident_literal(&mut self) -> Box<Expression<'a>> {
+    pub fn parse_ident_literal(&mut self, already: Option<Vec<Token<'a>>>) -> Box<Expression<'a>> {
         let mut idents: Vec<Token<'a>> = Vec::new();
+        if let Some(z) = already {
+            // self.consume_token();
+            return Box::new(Expression::NormalIdentifier { idents: z });
+        }
         idents.push(self.get_current_token().unwrap());
 
         while let Some(peek) = self.get_peek_token() {
@@ -263,7 +267,9 @@ impl<'a> Parser<'a> {
             error(format!("{} Parameter declarations in a function definition must be followed by a '|', received {:?} instead.", self.get_current_token().unwrap().position, self.get_current_token().unwrap().kind))
         }
 
-        self.consume_token();
+        if self.get_current_token().unwrap().kind == TokenType::Bar {
+            self.consume_token();
+        }
 
         if let Some(tok) = self.get_current_token() {
             if tok.kind != TokenType::Arrow {
@@ -288,7 +294,7 @@ impl<'a> Parser<'a> {
                     });
                 }
                 _ => {
-                    let expr = self.parse_expression(Precedence::LOWEST).unwrap_or_else(|| {error(format!("{} When '{{' is not provided in the function body, Clay expects a single expression.", tok.position));
+                    let expr = self.parse_expression(Precedence::LOWEST, None).unwrap_or_else(|| {error(format!("{} When '{{' is not provided in the function body, Clay expects a single expression.", tok.position));
                 panic!()});
                     let stmt = Statement::ReturnStatement {
                         token: tok,
@@ -315,7 +321,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_array_literal(&mut self) -> Box<Expression<'a>> {
-        println!("Hi!");
         let token = self.get_current_token().unwrap();
         let expressions = self.parse_expression_list(TokenType::RBracket);
 
@@ -334,7 +339,7 @@ impl<'a> Parser<'a> {
                 TokenType::Import => self.parse_import_statement(),
                 TokenType::Ident(_) => self.parse_identifier_statement(),
                 TokenType::Return => self.parse_return_statement(),
-                _ => self.parse_expression_statement(),
+                _ => self.parse_expression_statement(None),
             };
         } else {
             return None;
@@ -352,9 +357,12 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub fn parse_expression_statement(&mut self) -> Option<Statement<'a>> {
+    pub fn parse_expression_statement(
+        &mut self,
+        idents: Option<Vec<Token<'a>>>,
+    ) -> Option<Statement<'a>> {
         let token = self.get_current_token().unwrap();
-        let expression = self.parse_expression(Precedence::LOWEST);
+        let expression = self.parse_expression(Precedence::LOWEST, idents);
         if let Some(exp) = expression {
             return Some(Statement::ExpressionStatement {
                 token,
@@ -384,7 +392,7 @@ impl<'a> Parser<'a> {
                     kind = IdentTypes::Normal;
                 }
                 _ => {
-                    let exp = self.parse_expression_statement();
+                    let exp = self.parse_expression_statement(Some(idents));
 
                     return exp;
                 }
@@ -394,7 +402,7 @@ impl<'a> Parser<'a> {
             let token = self.get_current_token().unwrap();
 
             self.consume_token();
-            let expr = self.parse_expression(Precedence::LOWEST);
+            let expr = self.parse_expression(Precedence::LOWEST, None);
 
             if let Some(expression) = expr {
                 match kind {
@@ -418,7 +426,7 @@ impl<'a> Parser<'a> {
                 panic!();
             }
         } else {
-            let exp = self.parse_expression_statement();
+            let exp = self.parse_expression_statement(Some(idents));
 
             return exp;
         }
@@ -428,7 +436,7 @@ impl<'a> Parser<'a> {
         let token = self.get_current_token().unwrap();
         self.consume_token();
 
-        let value = self.parse_expression(Precedence::LOWEST).unwrap();
+        let value = self.parse_expression(Precedence::LOWEST, None).unwrap();
         return Some(Statement::ReturnStatement { token, value });
     }
 
@@ -455,16 +463,20 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn parse_expression(&mut self, precedence: Precedence) -> Option<Box<Expression<'a>>> {
+    pub fn parse_expression(
+        &mut self,
+        precedence: Precedence,
+        idents: Option<Vec<Token<'a>>>,
+    ) -> Option<Box<Expression<'a>>> {
         let prefix_tok = self.get_current_token().unwrap().kind;
 
-        let prefix = self.prefix_fn(prefix_tok, false);
+        let prefix = self.prefix_fn(prefix_tok, false, None);
 
         if !prefix.0 {
             return None;
         }
 
-        let mut prefix_exp = self.prefix_fn(prefix_tok, true).1.unwrap();
+        let mut prefix_exp = self.prefix_fn(prefix_tok, true, idents).1.unwrap();
 
         while precedence
             < self
@@ -497,6 +509,7 @@ impl<'a> Parser<'a> {
         &mut self,
         kind: TokenType<'a>,
         execute: bool,
+        idents: Option<Vec<Token<'a>>>,
     ) -> (bool, Option<Box<Expression<'a>>>) {
         match (kind, execute) {
             (TokenType::Integer(_), false) => (true, None),
@@ -514,7 +527,7 @@ impl<'a> Parser<'a> {
             (TokenType::Bar, false) => (true, None),
             (TokenType::Bar, true) => (true, Some(self.parse_function_expression())),
             (TokenType::Ident(_), false) => (true, None),
-            (TokenType::Ident(_), true) => (true, Some(self.parse_ident_literal())),
+            (TokenType::Ident(_), true) => (true, Some(self.parse_ident_literal(idents))),
             _ => (false, None),
         }
     }
@@ -583,7 +596,7 @@ impl<'a> Parser<'a> {
         let current = self.get_current_token().unwrap();
         let precedence = self.get_current_precedence().unwrap();
         self.consume_token();
-        let right = self.parse_expression(precedence).unwrap();
+        let right = self.parse_expression(precedence, None).unwrap();
         return Box::new(Expression::InfixExpression {
             token: current,
             right,
@@ -592,12 +605,27 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_grouped_expression(&mut self) -> Box<Expression<'a>> {
-        self.consume_token();
+        // self.consume_token();
+        if let Some(s) = self.get_current_token() {
+            if s.kind == TokenType::LParen {
+                self.consume_token();
+            }
+        }
 
-        let expr = self.parse_expression(Precedence::LOWEST);
+        let expr = self.parse_expression(Precedence::LOWEST, None);
 
         if let Some(expr) = expr {
-            self.expect_peek(TokenType::RParen, "defining a grouped expression");
+            if let Some(tok) = self.get_peek_token() {
+                self.expect_peek(TokenType::RParen, "defining a grouped expression");
+            } else {
+                if let Some(tok) = self.get_current_token() {
+                    if (tok.kind == TokenType::RParen) {
+                    } else {
+                        error(format!("{} Expected closing parenthesis.", tok.position));
+                    }
+                }
+            }
+
             return expr;
         } else {
             error(format!("Expected some expression after opening bracket."));
@@ -630,15 +658,21 @@ impl<'a> Parser<'a> {
         }
 
         self.consume_token();
-        exprs.push(self.parse_expression(Precedence::LOWEST).unwrap());
-        while self.get_current_token().unwrap().kind != end {
-            // self.consume_token();
-            println!("{:?}", self.get_current_token());
-            if let Some(expr) = self.parse_expression(Precedence::LOWEST) {
-                exprs.push(expr)
+        println!("{:?}", self.get_current_token());
+        exprs.push(self.parse_expression(Precedence::LOWEST, None).unwrap());
+        self.consume_token();
+        println!("{:?}", self.get_current_token());
+        while let Some(tok) = self.get_current_token() {
+            if tok.kind != end {
+                // self.consume_token();
+                if let Some(expr) = self.parse_expression(Precedence::LOWEST, None) {
+                    exprs.push(expr)
+                }
+                // exprs.push(.unwrap());
+                self.consume_token();
+            } else {
+                break;
             }
-            // exprs.push(.unwrap());
-            self.consume_token();
         }
 
         return exprs;
@@ -659,7 +693,7 @@ impl<'a> Parser<'a> {
         while self.get_peek_token().unwrap().kind != TokenType::RBrace {
             let mut destructures: Vec<Box<Expression<'a>>> = Vec::new();
             let mut statements: Vec<Statement<'a>> = Vec::new();
-            let expr = self.parse_expression(Precedence::LOWEST).unwrap();
+            let expr = self.parse_expression(Precedence::LOWEST, None).unwrap();
 
             match *expr {
                 Expression::UnderscoreLiteral { token } => {
@@ -675,7 +709,8 @@ impl<'a> Parser<'a> {
                             _ => {
                                 let token = self.get_current_token().unwrap();
                                 self.consume_token();
-                                let expression = self.parse_expression(Precedence::LOWEST).unwrap(); // TODO: Error check
+                                let expression =
+                                    self.parse_expression(Precedence::LOWEST, None).unwrap(); // TODO: Error check
                                 statements.push(Statement::ReturnStatement {
                                     token,
                                     value: expression,
@@ -712,7 +747,8 @@ impl<'a> Parser<'a> {
                         self.consume_token();
                         if let Some(peek2) = self.get_peek_token() {
                             self.consume_token();
-                            destructures.push(self.parse_expression(Precedence::LOWEST).unwrap());
+                            destructures
+                                .push(self.parse_expression(Precedence::LOWEST, None).unwrap());
                         } else {
                             error(format!("{} Expected some token after comma", peek.position));
                             panic!()
@@ -740,7 +776,7 @@ impl<'a> Parser<'a> {
                     _ => {
                         let token = self.get_current_token().unwrap();
                         self.consume_token();
-                        let expression = self.parse_expression(Precedence::LOWEST).unwrap(); // TODO: Error check
+                        let expression = self.parse_expression(Precedence::LOWEST, None).unwrap(); // TODO: Error check
                         statements.push(Statement::ReturnStatement {
                             token,
                             value: expression,
@@ -830,6 +866,17 @@ mod tests {
         let test_str = r#"
         arr := ["hi", 3, 4, 5]
         mapped := (arr.map((|v| -> v + 2)))
+        "#;
+
+        let lexer = Lexer::new(test_str).collect::<Vec<_>>();
+        let parser = Parser::new(lexer).parse_program();
+        println!("{:#?}", parser);
+    }
+    #[test]
+    fn z_check() {
+        let test_str = r#"
+        arr := http.io(3)
+        
         "#;
 
         let lexer = Lexer::new(test_str).collect::<Vec<_>>();
