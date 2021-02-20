@@ -658,10 +658,10 @@ impl<'a> Parser<'a> {
         }
 
         self.consume_token();
-        println!("{:?}", self.get_current_token());
+
         exprs.push(self.parse_expression(Precedence::LOWEST, None).unwrap());
         self.consume_token();
-        println!("{:?}", self.get_current_token());
+
         while let Some(tok) = self.get_current_token() {
             if tok.kind != end {
                 // self.consume_token();
