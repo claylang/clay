@@ -1,9 +1,10 @@
 use std::{
-    env,
+    env, fs,
     io::{self, Write},
 };
 
 use colored::Colorize;
+use fs::read_to_string;
 
 mod ast;
 mod errors;
@@ -40,7 +41,14 @@ fn main() -> io::Result<()> {
             }
         }
         _ => {
-            println!("Unfortunately, only the REPL is supported at the moment.")
+            args.remove(0);
+            for path in args {
+                let content = fs::read_to_string(&path)?;
+                let tokens = lexer::Lexer::new(&content[..]).collect::<Vec<_>>();
+                let stack = parser::Parser::new(tokens).parse_program();
+
+                println!("\n{:#?}\n", stack);
+            }
         }
     }
 
